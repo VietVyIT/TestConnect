@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  app:
+    build: .
+    container_name: library_app
+    stdin_open: true
+    tty: true
+
+    environment:
+      DB_HOST: host.docker.internal
+      DB_USER: root
+      DB_PASSWORD: Phanvietvy107@
+      DB_NAME: librarymanagementsystem
+      DB_PORT: "3306"
+
+    volumes:
+      - .:/app
+
+    command: ["python", "main.py"]
