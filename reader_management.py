@@ -45,12 +45,12 @@ def add_reader():
     while True:
         rid = input("Enter reader ID (e.g., DG001): ").strip()
         if rid == "":
-            print("\n This field is required and cannot be empty.")
+            print("\n This field cannot be empty.")
             if not retry_or_exit(): return
             continue
 
         if not (len(rid) == 5 and rid.startswith("DG") and rid[2:].isdigit()):
-            print("\n Reader ID must be in the format DGxxx.")
+            print("\n Reader ID must follow DGxxx.")
             if not retry_or_exit(): return
             continue
 
@@ -59,14 +59,13 @@ def add_reader():
             print("\n Reader ID already exists.")
             if not retry_or_exit(): return
             continue
-
         break
 
-    # Họ tên
+    # Full name
     while True:
         name = input("Enter full name: ").strip()
         if name == "":
-            print("\n This field is required and cannot be empty.")
+            print("\n Name cannot be empty.")
             if not retry_or_exit(): return
             continue
         break
@@ -75,55 +74,34 @@ def add_reader():
     while True:
         dob_input = input("Enter date of birth (YYYY-MM-DD): ").strip()
 
-        if dob_input == "":
-            print("\n This field is required and cannot be empty.")
+        if not validate_date_input(dob_input):
+            print("\n Invalid date format or logic (YYYY-MM-DD, year >= 1900, < today).")
             if not retry_or_exit(): return
             continue
 
-        # sai định dạng
-        try:
-            dob = datetime.datetime.strptime(dob_input, "%Y-%m-%d").date()
-        except ValueError:
-            print("\n Invalid format! (correct: YYYY-MM-DD)")
-            if not retry_or_exit(): return
-            continue
-
-        # Date of birth logic
-        if dob >= datetime.date.today():
-            print("\n Date of birth must be earlier than today.")
-            if not retry_or_exit(): return
-            continue
-
-        if dob.year < 1900:
-            print("\n Year of birth must be ≥ 1900.")
-            if not retry_or_exit(): return
-            continue
-
+        dob = datetime.datetime.strptime(dob_input, "%Y-%m-%d").date()
         break
 
     # Phone
     while True:
         phone = input("Enter phone number (10 digits): ").strip()
 
-        if phone == "":
-            print("\n This field is required and cannot be empty.")
+        if not validate_phone(phone):
+            print("\n Invalid phone number (must be 10 digits).")
             if not retry_or_exit(): return
             continue
 
-        if not validate_phone(phone):
-            print("\n Phone number must be 10 digits.")
+        cursor.execute("SELECT phone FROM readers WHERE phone=%s", (phone,))
+        if cursor.fetchone():
+            print("\n Phone number already exists.")
             if not retry_or_exit(): return
             continue
+
         break
 
     # Email
     while True:
         email = input("Enter email: ").strip()
-
-        if email == "":
-            print("\n This field is required and cannot be empty.")
-            if not retry_or_exit(): return
-            continue
 
         if not validate_email(email):
             print("\n Invalid email.")
@@ -135,22 +113,23 @@ def add_reader():
             print("\n Email already exists.")
             if not retry_or_exit(): return
             continue
+
         break
 
     # Address
     while True:
-        addr = input("Enter address: ").strip()
-        if addr == "":
-            print("\n This field is required and cannot be empty.")
+        address = input("Enter address: ").strip()
+        if address == "":
+            print("\n Address cannot be empty.")
             if not retry_or_exit(): return
             continue
         break
 
-    # Add to DB
+    # INSERT into DB (convert date → string)
     cursor.execute("""
         INSERT INTO readers (reader_id, name, dob, phone, email, address)
         VALUES (%s, %s, %s, %s, %s, %s)
-    """, (rid, name, dob, phone, email, addr))
+    """, (rid, name, dob.strftime("%Y-%m-%d"), phone, email, address))
 
     conn.commit()
     cursor.close()
@@ -160,7 +139,7 @@ def add_reader():
 
 
 # ==========================
-# LIST
+# LIST READERS
 # ==========================
 
 def list_readers():
@@ -192,7 +171,7 @@ def list_readers():
 # ==========================
 
 def view_reader():
-    print("\n===== VIEW READER DETAILS =====")
+    print("\n===== VIEW READER =====")
     rid = input("Enter reader ID: ").strip()
 
     conn = get_db()
@@ -202,7 +181,7 @@ def view_reader():
     r = cursor.fetchone()
 
     if not r:
-        print("\n Does not exist.")
+        print("\n Reader does not exist.")
         return
 
     print("\nID:", r["reader_id"])
@@ -217,7 +196,7 @@ def view_reader():
 
 
 # ==========================
-# EDIT
+# EDIT READER
 # ==========================
 
 def edit_reader():
@@ -231,46 +210,55 @@ def edit_reader():
     r = cursor.fetchone()
 
     if not r:
-        print("\n Does not exist.")
+        print("\n Reader does not exist.")
         return
 
-    print("\nPress Enter to keep current value.")
+    print("\nPress Enter to skip any field.")
 
+    # Name
     name = input("New name: ").strip()
-    if name: r["name"] = name
+    if name:
+        r["name"] = name
 
-    # New date of birth
-    dob_input = input("New date of birth (YYYY-MM-DD): ").strip()
+    # DOB
+    dob_input = input("New DOB (YYYY-MM-DD): ").strip()
     if dob_input:
-        try:
+        if validate_date_input(dob_input):
             dob = datetime.datetime.strptime(dob_input, "%Y-%m-%d").date()
-            if dob < datetime.date.today() and dob.year >= 1900:
-                r["dob"] = dob
-            else:
-                print(" Invalid date of birth.")
-        except:
-            print(" Invalid format.")
+            r["dob"] = dob.strftime("%Y-%m-%d")
+        else:
+            print("Invalid DOB → kept old value.")
 
+    # Phone
     phone = input("New phone: ").strip()
     if phone:
         if validate_phone(phone):
-            r["phone"] = phone
+            cursor.execute("SELECT phone FROM readers WHERE phone=%s AND reader_id!=%s", (phone, rid))
+            if cursor.fetchone():
+                print("Phone already exists → kept old value.")
+            else:
+                r["phone"] = phone
         else:
-            print(" Invalid phone number.")
+            print("Invalid phone.")
 
+    # Email
     email = input("New email: ").strip()
     if email:
         if validate_email(email):
             cursor.execute("SELECT email FROM readers WHERE email=%s AND reader_id!=%s", (email, rid))
             if cursor.fetchone():
-                print(" Email already exists!")
+                print("Email already exists → kept old value.")
             else:
                 r["email"] = email
         else:
-            print(" Invalid email.")
-    addr = input("New address: ").strip()
-    if addr: r["address"] = addr
+            print("Invalid email.")
 
+    # Address
+    addr = input("New address: ").strip()
+    if addr:
+        r["address"] = addr
+
+    # UPDATE DB
     cursor.execute("""
         UPDATE readers
         SET name=%s, dob=%s, phone=%s, email=%s, address=%s
@@ -281,11 +269,11 @@ def edit_reader():
     cursor.close()
     conn.close()
 
-    print("\n Update successful!")
+    print("\n Reader updated successfully!")
 
 
 # ==========================
-# DELETE
+# DELETE READER
 # ==========================
 
 def delete_reader():
@@ -299,10 +287,10 @@ def delete_reader():
     r = cursor.fetchone()
 
     if not r:
-        print("\n Does not exist.")
+        print("\n Reader does not exist.")
         return
 
-    print(f"\nAre you sure you want to delete: {r['name']}?")
+    print(f"\nDelete reader: {r['name']} ?")
     print("1. Yes")
     print("2. Cancel")
 
@@ -316,7 +304,7 @@ def delete_reader():
     cursor.close()
     conn.close()
 
-    print("\n Delete successful!")
+    print("\n Reader deleted successfully!")
 
 
 # ==========================
@@ -330,7 +318,7 @@ def reader_menu():
         print("2. List readers")
         print("3. View details")
         print("4. Edit information")
-        print("5. Delete")
+        print("5. Delete reader")
         print("6. Exit")
 
         choice = input("Choose: ").strip()
@@ -340,6 +328,7 @@ def reader_menu():
         elif choice == "3": view_reader()
         elif choice == "4": edit_reader()
         elif choice == "5": delete_reader()
-        elif choice == "6": break
+        elif choice == "6":
+            break
         else:
             print("\n Invalid choice!")
