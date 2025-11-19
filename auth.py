@@ -3,7 +3,7 @@ import sys
 from db import get_db
 
 # ==============================
-#   VALIDATION
+#   COMMON VALIDATION
 # ==============================
 
 def retry_or_exit():
@@ -19,14 +19,18 @@ def validate_password(pw):
     )
 
 def validate_email(email):
-    return "@" in email and "." in email and not email.startswith("@") and not email.endswith("@")
+    return (
+        "@" in email and "." in email
+        and not email.startswith("@")
+        and not email.endswith("@")
+    )
 
 def validate_phone(phone):
     return phone.isdigit() and len(phone) == 10
 
 
 # ==============================
-#   ĐĂNG NHẬP
+#   LOGIN
 # ==============================
 
 def login():
@@ -35,14 +39,13 @@ def login():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
 
-    # chọn vai trò
+    # Select role
     while True:
         role = input("Choose role (admin / librarian): ").strip().lower()
         if role in ["admin", "librarian"]:
             break
         print(" Invalid role!")
-    
-    # đăng nhập
+
     attempts = 0
 
     while True:
@@ -50,9 +53,8 @@ def login():
         password = input("Password: ").strip()
 
         if username == "" or password == "":
-            print("\n Cannot be empty!")
-            if not retry_or_exit():
-                sys.exit()
+            print("\n Fields cannot be empty!")
+            if not retry_or_exit(): sys.exit()
             continue
 
         cursor.execute("SELECT * FROM users WHERE username=%s AND role=%s", (username, role))
@@ -60,16 +62,15 @@ def login():
 
         if not user:
             print("\n Incorrect username or role.")
-            if not retry_or_exit():
-                sys.exit()
+            if not retry_or_exit(): sys.exit()
             continue
 
-        # kiểm tra khóa tài khoản
+        # Account locked
         if user["fail"] >= 3:
             print("\n ACCOUNT LOCKED DUE TO 3 FAILED ATTEMPTS.")
             sys.exit()
 
-        # kiểm tra mật khẩu
+        # Wrong password
         if password != user["password"]:
             attempts += 1
             print(f"\n Incorrect password. Attempt {attempts}/3")
@@ -77,27 +78,25 @@ def login():
             if attempts == 3:
                 cursor.execute("UPDATE users SET fail = 3 WHERE id=%s", (user["id"],))
                 conn.commit()
-                print("\n You have entered the wrong password more than the allowed number of times (3 times)!")
-                print("ACCOUNT LOCKED.")
-                print("→ The program will automatically exit.")
+                print("\n You have entered the wrong password 3 times!")
+                print(" ACCOUNT LOCKED.\n→ Program will exit.")
                 sys.exit()
 
-            if not retry_or_exit():
-                sys.exit()
+            if not retry_or_exit(): sys.exit()
             continue
 
-        # successful login
+        # Successful login
         cursor.execute("UPDATE users SET fail = 0 WHERE id=%s", (user["id"],))
         conn.commit()
 
-        print(f"\n🎉 Login successful! Welcome {user['username']}.")
+        print(f"\n Login successful! Welcome {user['username']}.")
         cursor.close()
         conn.close()
         return user
 
 
 # ==============================
-#   ĐĂNG KÝ TÀI KHOẢN
+#   REGISTER ACCOUNT
 # ==============================
 
 def register():
@@ -106,7 +105,7 @@ def register():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
 
-    # username
+    # Username
     while True:
         username = input("Username: ").strip()
 
@@ -122,12 +121,12 @@ def register():
             continue
         break
 
-    # password
+    # Password
     while True:
-        pw = input("Mật khẩu: ").strip()
+        pw = input("Password: ").strip()
 
         if not validate_password(pw):
-            print("\n Password must be at least 6 characters long, contain a number and a special character.")
+            print("\n Password must be at least 6 chars, contain a number and a special character.")
             if not retry_or_exit(): return
             continue
 
@@ -138,7 +137,7 @@ def register():
             continue
         break
 
-    # email
+    # Email
     while True:
         email = input("Email: ").strip()
 
@@ -148,13 +147,18 @@ def register():
             continue
 
         if not validate_email(email):
-            print(" Invalid email.")
+            print(" Invalid email format.")
             if not retry_or_exit(): return
             continue
 
+        cursor.execute("SELECT email FROM users WHERE email=%s", (email,))
+        if cursor.fetchone():
+            print(" Email already registered.")
+            if not retry_or_exit(): return
+            continue
         break
 
-    # phone
+    # Phone
     while True:
         phone = input("Phone number (10 digits): ").strip()
 
@@ -167,12 +171,18 @@ def register():
             print(" Invalid phone number.")
             if not retry_or_exit(): return
             continue
+
+        cursor.execute("SELECT phone FROM users WHERE phone=%s", (phone,))
+        if cursor.fetchone():
+            print(" Phone number already registered.")
+            if not retry_or_exit(): return
+            continue
         break
 
-    # thêm tài khoản mới (vai trò mặc định là thủ thư)
+    # Insert new user (default role = librarian)
     cursor.execute("""
         INSERT INTO users(username, password, role, fail, email, phone)
-        VALUES (%s, %s, 'thuthu', 0, %s, %s)
+        VALUES (%s, %s, 'librarian', 0, %s, %s)
     """, (username, pw, email, phone))
 
     conn.commit()
@@ -183,7 +193,7 @@ def register():
 
 
 # ==============================
-#   QUÊN MẬT KHẨU
+#   FORGOT PASSWORD
 # ==============================
 
 def forgot_password():
@@ -204,27 +214,29 @@ def forgot_password():
     user = cursor.fetchone()
 
     if not user:
-        print("\n Information is incorrect.")
+        print("\n Information does not match any account.")
         return
 
-    print("\n✔ Verification successful. You can set a new password.")
+    print("\n✔ Verification successful. Set a new password.")
 
     while True:
         pw = input("New password: ").strip()
+
         if not validate_password(pw):
-            print("Password must be at least 6 characters long, contain a number and a special character.")
+            print("Password must be at least 6 chars, contain a number and a special character.")
             if not retry_or_exit(): return
             continue
 
         pw2 = input("Confirm password: ").strip()
         if pw != pw2:
-            print("Passwords do not match.")
+            print(" Passwords do not match.")
             if not retry_or_exit(): return
             continue
         break
 
     cursor.execute("UPDATE users SET password=%s, fail=0 WHERE id=%s", (pw, user["id"]))
     conn.commit()
+
     cursor.close()
     conn.close()
 
@@ -232,7 +244,7 @@ def forgot_password():
 
 
 # ==============================
-#   MENU ĐẦU TIÊN
+#   AUTH MAIN MENU
 # ==============================
 
 def auth_menu():
@@ -242,16 +254,17 @@ def auth_menu():
         print("2. Register")
         print("3. Forgot password")
         print("0. Exit")
-        c = input("Choose: ").strip()
 
-        if c == "1":
+        choice = input("Choose: ").strip()
+
+        if choice == "1":
             return login()
-        elif c == "2":
+        elif choice == "2":
             register()
-        elif c == "3":
+        elif choice == "3":
             forgot_password()
-        elif c == "0":
-            print("Goodbye!")
+        elif choice == "0":
+            print("👋 Goodbye!")
             sys.exit()
         else:
             print(" Invalid choice.")
